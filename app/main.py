@@ -21,7 +21,38 @@ def _select_engine_mode(settings) -> str:
     return "agent" if settings.engine_mode == "agent" else "rag"
 
 
-def _construct_real_engine(settings, mode: str):  # pragma: no cover - requiere BD+LLM reales
+def _require_llm_credentials(settings) -> None:
+    """Falla fuerte SI y SOLO SI faltan credenciales para el motor real ('rag'/'agent').
+
+    Sin esto, Anthropic()/OpenAIEmbedding() se construyen "bien" con api_key=None:
+    /health/ready da 200 y el fallo real solo aparece en el primer POST como
+    "error interno" (excepción genérica en routes.py) — un banco no puede permitirse
+    que un pod se anuncie listo sin poder responder. Se comprueba ANTES de importar
+    nada de llama_index, así se prueba sin BD/red (a diferencia del resto de esta
+    construcción, que sí requiere infraestructura real).
+    """
+    missing = [
+        name
+        for name, value in (
+            ("ANTHROPIC_API_KEY", settings.anthropic_api_key),
+            ("OPENAI_API_KEY", settings.openai_api_key),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "Faltan credenciales para arrancar el motor real "
+            f"({', '.join(missing)}): revisa el K8s Secret/Vault del banco. "
+            "El pod no debe llegar a 'ready' sin ellas."
+        )
+
+
+def _construct_real_engine(settings, mode: str):
+    _require_llm_credentials(settings)
+    return _assemble_real_engine(settings, mode)
+
+
+def _assemble_real_engine(settings, mode: str):  # pragma: no cover - requiere BD+LLM reales
     """'rag' o 'agent' con infraestructura real. Igual que LlamaIndexEngine (app.rag.engine),
     esto solo se ejercita con BD+credenciales reales (test de integración), no en unitarios."""
     from app.rag.engine import LlamaIndexEngine
