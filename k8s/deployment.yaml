@@ -17,7 +17,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: api
-          image: registry.banco.local/rag-banking-agent:${IMAGE_TAG}
+          image: ${IMAGE_REPO}:${IMAGE_TAG}   # los inyecta el pipeline (envsubst)
           ports: [{ containerPort: 8000 }]
           envFrom:
             - secretRef: { name: rag-agent-db-secrets }   # APP_DATABASE_URL, LLAMAINDEX_DATABASE_URL
