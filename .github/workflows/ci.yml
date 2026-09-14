@@ -38,6 +38,11 @@ jobs:
       LLAMAINDEX_DATABASE_URL: postgresql+asyncpg://ai_readonly:ro_pw@localhost:5432/banco
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # gitleaks necesita el historial completo, no solo el último commit
+      - name: Escaneo de secretos (gitleaks) — bloquea aquí, antes de que llegue el aviso de GitGuardian
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@v5
         with: { python-version: "3.11", cache: pip }
       - run: pip install -r requirements-dev.txt
