@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-banking-agent
+  labels: { app: rag-banking-agent }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: rag-banking-agent }
+  template:
+    metadata:
+      labels: { app: rag-banking-agent }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: api
+          image: registry.banco.local/rag-banking-agent:${IMAGE_TAG}
+          ports: [{ containerPort: 8000 }]
+          envFrom:
+            - secretRef: { name: rag-agent-db-secrets }   # APP_DATABASE_URL, LLAMAINDEX_DATABASE_URL
+            - secretRef: { name: rag-agent-llm-secrets }  # ANTHROPIC_API_KEY, OPENAI_API_KEY
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits:   { cpu: "2",    memory: "3Gi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          startupProbe:                 # da tiempo a cargar índices sin que liveness mate el pod
+            httpGet: { path: /api/v1/health/ready, port: 8000 }
+            periodSeconds: 5
+            failureThreshold: 30        # hasta 150s de arranque
+          readinessProbe:               # no recibe tráfico hasta estar listo
+            httpGet: { path: /api/v1/health/ready, port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:                # reinicia solo si el proceso está muerto
+            httpGet: { path: /api/v1/health/live, port: 8000 }
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop: { exec: { command: ["sleep", "15"] } }  # deja terminar streams SSE en curso
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-banking-agent
+spec:
+  selector: { app: rag-banking-agent }
+  ports: [{ port: 80, targetPort: 8000 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rag-banking-agent
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: rag-banking-agent }
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }

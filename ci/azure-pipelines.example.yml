@@ -1,0 +1,38 @@
+# Mismas etapas que .github/workflows/ci.yml, para bancos con Azure DevOps.
+# Secretos en Variable Groups / Key Vault; el environment "production" exige aprobación manual.
+trigger: { branches: { include: [main] } }
+pool: { vmImage: ubuntu-latest }
+variables: { image: "$(REGISTRY)/rag-banking-agent:$(Build.SourceVersion)" }
+
+stages:
+  - stage: Test
+    jobs:
+      - job: test
+        steps:
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "3.11" }
+          - script: pip install -r requirements-dev.txt
+          - script: ruff check . && bandit -r app -ll
+            displayName: Lint + SAST
+          - script: pytest --cov=app --cov-fail-under=85
+            displayName: Tests + cobertura
+  - stage: Build
+    dependsOn: Test
+    jobs:
+      - job: build
+        steps:
+          - script: docker build -t $(image) . && docker push $(image)
+          - script: trivy image --severity CRITICAL,HIGH --exit-code 1 $(image)
+            displayName: Escaneo de imagen
+  - stage: Deploy
+    dependsOn: Build
+    jobs:
+      - deployment: deploy
+        environment: production        # aprobación manual configurada en el environment
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - script: |
+                    IMAGE_TAG=$(Build.SourceVersion) envsubst < k8s/deployment.yaml | kubectl apply -f -
+                    kubectl rollout status deployment/rag-banking-agent --timeout=180s

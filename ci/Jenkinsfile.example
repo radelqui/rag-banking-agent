@@ -1,0 +1,22 @@
+// Mismas etapas que .github/workflows/ci.yml, para bancos con Jenkins.
+// Los secretos (registry, kubeconfig) viven en Jenkins Credentials, nunca en el repo.
+pipeline {
+  agent { docker { image 'python:3.11-slim' } }
+  environment { IMAGE = "${REGISTRY}/rag-banking-agent:${GIT_COMMIT}" }
+  stages {
+    stage('Lint + SAST') { steps { sh 'pip install -r requirements-dev.txt && ruff check . && bandit -r app -ll' } }
+    stage('Tests')       { steps { sh 'pytest --cov=app --cov-fail-under=85' } }
+    stage('Build')       { when { branch 'main' } steps { sh 'docker build -t $IMAGE . && docker push $IMAGE' } }
+    stage('Trivy')       { when { branch 'main' } steps { sh 'trivy image --severity CRITICAL,HIGH --exit-code 1 $IMAGE' } }
+    stage('Deploy') {
+      when { branch 'main' }
+      steps {
+        input message: 'Aprobar despliegue a producción'   // human loop: firma antes, no después
+        withCredentials([file(credentialsId: 'kubeconfig-prod', variable: 'KUBECONFIG')]) {
+          sh 'IMAGE_TAG=$GIT_COMMIT envsubst < k8s/deployment.yaml | kubectl apply -f -'
+          sh 'kubectl rollout status deployment/rag-banking-agent --timeout=180s'
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+name: CI/CD
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check .
+      - name: Security scan (SAST)
+        run: bandit -r app -ll
+      - name: Tests + cobertura
+        run: pytest --cov=app --cov-fail-under=85
+
+  build-and-push:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: ${{ github.actor }}, password: ${{ secrets.GITHUB_TOKEN }} }
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+      - name: Escaneo de vulnerabilidades de imagen
+        uses: aquasecurity/trivy-action@0.28.0   # versión fijada: nada de @master en un banco
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production   # requiere aprobación manual
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy a Kubernetes
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}   # secreto del banco, inyectado por el pipeline
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "$KUBECONFIG_B64" | base64 -d > kubeconfig
+          export KUBECONFIG=./kubeconfig
+          envsubst < k8s/deployment.yaml | kubectl apply -f -
+          kubectl rollout status deployment/rag-banking-agent --timeout=180s
