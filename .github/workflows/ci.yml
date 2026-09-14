@@ -37,13 +37,13 @@ jobs:
       APP_DATABASE_URL: postgresql+asyncpg://app_user:app_pw@localhost:5432/banco
       LLAMAINDEX_DATABASE_URL: postgresql+asyncpg://ai_readonly:ro_pw@localhost:5432/banco
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with: { fetch-depth: 0 }   # gitleaks necesita el historial completo, no solo el último commit
       - name: Escaneo de secretos (gitleaks) — bloquea aquí, antes de que llegue el aviso de GitGuardian
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7   # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
         with: { python-version: "3.11", cache: pip }
       - run: pip install -r requirements-dev.txt
       - name: Cargar esquema en Postgres (extensión vector + tablas + roles)
@@ -63,21 +63,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: read, packages: write }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
       - name: Build (sin publicar)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8   # v6.19.2
         with:
           context: .
           load: true
           tags: ${{ env.IMAGE_REPO }}:${{ github.sha }}
       - name: Escaneo de vulnerabilidades de imagen (antes de publicar)
-        uses: aquasecurity/trivy-action@v0.28.0   # versión fijada: nada de @master en un banco
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25   # v0.36.0 — fija su propia dependencia setup-trivy por hash, no por tag
         with:
           image-ref: ${{ env.IMAGE_REPO }}:${{ github.sha }}
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9   # v3.7.0
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       - name: Push (solo si el escaneo pasó)
         run: docker push "$IMAGE_REPO:$GITHUB_SHA"
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production   # puerta humana: required reviewers en Settings > Environments
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
       - name: Deploy a Kubernetes
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}   # secreto del banco, inyectado por el pipeline
