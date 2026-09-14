@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS products (
 INSERT INTO accounts VALUES ('C123', 1520.75, 'EUR') ON CONFLICT DO NOTHING;
 INSERT INTO products VALUES ('PROD-8849-X', 'Depósito Plus 12m', 3.25) ON CONFLICT DO NOTHING;
 
--- Tabla de vectores: réplica exacta del modelo híbrido de PGVectorStore 0.4.1
+-- Tabla de vectores: réplica exacta del modelo híbrido de PGVectorStore 0.9.0
 -- (get_data_model con table_name=documentos_bancarios, use_jsonb=True, text_search_config=spanish).
 -- La crea el DBA; la app arranca con perform_setup=False y no ejecuta DDL.
 CREATE TABLE IF NOT EXISTS data_documentos_bancarios (
@@ -25,11 +25,14 @@ CREATE TABLE IF NOT EXISTS data_documentos_bancarios (
   embedding vector(1536),
   text_search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('spanish', text)) STORED
 );
--- Índice HNSW (búsqueda semántica) + GIN (búsqueda de texto exacto).
--- Nombres = los que usa PGVectorStore, para que su CREATE INDEX IF NOT EXISTS no duplique índices.
+-- Índices HNSW (semántico) + GIN (texto exacto) + BTREE (metadata_->>'ref_doc_id', que
+-- PGVectorStore 0.9.0 crea siempre para su borrado por ref_doc_id — no existía en 0.4.1).
+-- Nombres = los que usa PGVectorStore, para que su CREATE INDEX IF NOT EXISTS no duplique nada.
 CREATE INDEX IF NOT EXISTS data_documentos_bancarios_embedding_idx ON data_documentos_bancarios
   USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 CREATE INDEX IF NOT EXISTS documentos_bancarios_idx ON data_documentos_bancarios USING gin (text_search_tsv);
+CREATE INDEX IF NOT EXISTS documentos_bancarios_idx_1 ON data_documentos_bancarios
+  USING btree ((metadata_ ->> 'ref_doc_id'));
 
 -- Usuario de la API (lectura/escritura)
 CREATE ROLE app_user LOGIN PASSWORD 'app_pw';
