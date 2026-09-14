@@ -58,6 +58,8 @@ El código conoce los **nombres**; los **valores** los inyecta el banco al arran
 | Registry de imágenes, clúster, KUBECONFIG | DevOps | pipeline + `k8s/` |
 | Herramienta de CI (GitHub Actions / Jenkins / Azure DevOps) | DevOps | `.github/workflows/` o `ci/` |
 
+> Las credenciales que aparecen en `docker-compose.yml` e `init_db.sql` (`app_pw`, `ro_pw`, `postgres`) son de un entorno local de demo, sin ningún valor fuera de este repo. En el banco las inyecta el pipeline, como en la tabla de arriba.
+
 ## Seguridad del agente (defensa en capas)
 1. Identidad de la pasarela, nunca del prompt: el LLM no puede elegir cliente (tools enlazadas).
 2. Guardrails de entrada (injection) antes de gastar tokens.
