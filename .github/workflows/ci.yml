@@ -25,7 +25,7 @@ jobs:
         env:
           POSTGRES_DB: banco
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: ${{ secrets.CI_PG_PASSWORD }}   # solo vive en este runner efímero; cero literales en el YAML
         ports: ["5432:5432"]
         options: >-
           --health-cmd="pg_isready -U postgres"
@@ -48,7 +48,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Cargar esquema en Postgres (extensión vector + tablas + roles)
         env:
-          PGPASSWORD: postgres
+          PGPASSWORD: ${{ secrets.CI_PG_PASSWORD }}
         run: psql -h localhost -U postgres -d banco -v ON_ERROR_STOP=1 -f scripts/init_db.sql
       - name: Lint
         run: ruff check .
