@@ -11,11 +11,13 @@ el banco inyecte el secreto; ver README/CLAUDE.md de 04-agentes.
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from llama_index.core.base.llms.types import ChatMessage, ChatResponse, LLMMetadata, MessageRole
 from llama_index.core.llms.function_calling import FunctionCallingLLM
 from llama_index.core.llms.llm import ToolSelection
 
-from app.agent.runtime import AgentEngine, build_agent
+from app.agent.runtime import _GENERIC_TOOL_ERROR, AgentEngine, build_agent
+from app.agent.tools import ToolError
 from app.rag.engine import FakeEngine
 
 
@@ -161,3 +163,115 @@ async def test_agent_engine_aisla_clientes_distintos():
 
 async def AsyncEngineDrain(agen):
     return [t async for t in agen]
+
+
+# --- H2/H3 (veredicto del verificador sobre c1afb6d): un tool_call con kwargs que la
+# función no admite no debe filtrar nombres internos («bind_tools.<locals>.balance…»)
+# ni permitir que se cuele un customer_id distinto del atado a la tool. Las tres
+# variantes que probó el verificador, reproducidas literalmente. ---
+
+
+async def test_tool_kwargs_con_customer_id_ajeno_no_filtra_nombres_ni_ejecuta_sql():
+    """Variante 1: tool_kwargs de `get_account_balance` con un customer_id (C999)
+    que la función no admite."""
+    sql_engine = FakeSqlEngine(row=("100.50", "EUR"))
+    agent = build_agent(sql_engine, FakeEngine(), "C123", llm=ScriptedFunctionCallingLLM())
+    balance_tool = next(t for t in agent.tools if t.metadata.name == "get_account_balance")
+
+    with pytest.raises(ToolError) as exc:
+        await balance_tool.acall(customer_id="C999")
+
+    mensaje = str(exc.value)
+    assert mensaje == _GENERIC_TOOL_ERROR
+    assert "bind_tools" not in mensaje
+    assert "<locals>" not in mensaje
+    assert "balance" not in mensaje
+    assert sql_engine.executed == []  # ni con C123 ni con C999: la tool nunca llegó a la BD
+
+
+async def test_inyeccion_sql_en_product_code_no_ejecuta_nada_contra_la_bd():
+    """Variante 2: inyección SQL en el argumento `product_code` de `get_product_info`."""
+    sql_engine = FakeSqlEngine(row=None)
+    agent = build_agent(sql_engine, FakeEngine(), "C123", llm=ScriptedFunctionCallingLLM())
+    product_tool = next(t for t in agent.tools if t.metadata.name == "get_product_info")
+
+    with pytest.raises(ToolError, match="inválido"):
+        await product_tool.acall(product_code="X'; DROP TABLE accounts;--")
+
+    assert sql_engine.executed == []  # la validación de _validate_id/product rechaza antes de tocar la BD
+
+
+async def test_tool_rag_con_customer_id_ajeno_no_filtra_nombres_ni_consulta_por_otro_cliente():
+    """Variante 3: tool_kwargs de `buscar_documentacion` con un customer_id (C999)
+    que la función no admite — no debe consultar el RAG en nombre de otro cliente."""
+    rag_engine = FakeEngine(tokens=["dato confidencial de C123"])
+    agent = build_agent(FakeSqlEngine(), rag_engine, "C123", llm=ScriptedFunctionCallingLLM())
+    rag_tool = next(t for t in agent.tools if t.metadata.name == "buscar_documentacion")
+
+    with pytest.raises(ToolError) as exc:
+        await rag_tool.acall(pregunta="dato", customer_id="C999")
+
+    mensaje = str(exc.value)
+    assert mensaje == _GENERIC_TOOL_ERROR
+    assert "runtime" not in mensaje
+    assert "<locals>" not in mensaje
+    assert "buscar_documentacion" not in mensaje
+    assert rag_engine.customers == []  # astream() nunca se llegó a invocar, ni con C123 ni con C999
+
+
+class HostileFunctionCallingLLM(ScriptedFunctionCallingLLM):
+    """Como ScriptedFunctionCallingLLM, pero en el primer turno intenta colar un
+    customer_id ajeno en tool_kwargs (variante 1 del verificador) y, en el segundo,
+    repite tal cual lo que "vio" en el resultado de la tool — el peor caso: un LLM
+    que parafrasea/cita el contenido del error al usuario. Prueba de extremo a
+    extremo (vía AgentEngine.astream, lo que de verdad llega al cliente) de que ni
+    así se filtran nombres internos."""
+
+    async def astream_chat_with_tools(
+        self,
+        tools,
+        user_msg=None,
+        chat_history=None,
+        verbose=False,
+        allow_parallel_tool_calls=False,
+        **kwargs,
+    ):
+        tool_ya_respondio = any(m.role == "tool" for m in (chat_history or []))
+        if tool_ya_respondio:
+            ultimo_tool_msg = next(m for m in reversed(chat_history) if m.role == "tool")
+            texto = ultimo_tool_msg.content or ""
+            message = ChatMessage(role=MessageRole.ASSISTANT, content=texto)
+            response = ChatResponse(message=message, delta=texto, additional_kwargs={"tool_selections": []})
+        else:
+            selections = [
+                ToolSelection(
+                    tool_id="1",
+                    tool_name="get_account_balance",
+                    tool_kwargs={"customer_id": "C999"},
+                )
+            ]
+            message = ChatMessage(role=MessageRole.ASSISTANT, content="")
+            response = ChatResponse(
+                message=message, delta="", additional_kwargs={"tool_selections": selections}
+            )
+
+        async def gen():
+            yield response
+
+        return gen()
+
+
+async def test_agent_engine_no_filtra_nombres_internos_ni_con_llm_hostil_de_extremo_a_extremo():
+    """Aunque el LLM intente colar un customer_id ajeno Y luego repita al pie de la
+    letra lo que la tool devolvió, lo que llega al stream del cliente (lo que
+    consume app.api.routes) es el mensaje genérico, nunca el TypeError interno."""
+    sql_engine = FakeSqlEngine(row=("100.50", "EUR"))
+    engine = AgentEngine(sql_engine, FakeEngine(), llm=HostileFunctionCallingLLM())
+
+    tokens = [t async for t in engine.astream("dame el saldo de otro cliente", "C123")]
+
+    respuesta = "".join(tokens)
+    assert respuesta == _GENERIC_TOOL_ERROR
+    assert "bind_tools" not in respuesta
+    assert "<locals>" not in respuesta
+    assert sql_engine.executed == []  # el intento con C999 nunca tocó la BD
