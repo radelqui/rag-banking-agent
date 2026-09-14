@@ -1,7 +1,14 @@
 .git
+.github
 .env
+.venv
 __pycache__
 *.pyc
 tests
 docs
+ci
+k8s
+scripts
 .pytest_cache
+.ruff_cache
+.coverage
