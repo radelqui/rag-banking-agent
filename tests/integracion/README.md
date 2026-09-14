@@ -23,6 +23,13 @@ texto) usando los índices ya creados, sin disparar ningún DDL
 
 ## Precondición
 
+`.env` con `POSTGRES_PASSWORD`, `APP_PW` y `RO_PW` rellenas (copiar
+`.env.example` → `.env`; nunca commitear `.env`, ya está en `.gitignore`).
+Desde `beecb06`/tras el fix de GitGuardian, ninguna contraseña vive literal
+en `docker-compose.yml` ni en `scripts/init_db.sql`: las lee el contenedor
+de `.env` (`env_file:` en el compose) y `init_db.sql` las captura con
+`\set ... \`echo "$APP_PW"\`` + `:'var'` (interpolación segura de psql).
+
 Levantar los servicios definidos en `docker-compose.yml` (raíz del repo,
 `rag-banking-agent`):
 
@@ -37,6 +44,14 @@ docker compose exec -T db pg_isready -U postgres
 - los roles `app_user` (lectura/escritura) y `ai_readonly` (solo `SELECT`,
   `statement_timeout=5s`),
 - los índices HNSW + GIN con los nombres de PGVectorStore.
+
+**Para el CI**: exportar `POSTGRES_PASSWORD`, `APP_PW`, `RO_PW` como GitHub
+Actions secrets (no hace falta que sean el mismo valor que en local; solo
+tienen que existir y coincidir entre el paso que hace `docker compose up`
+y el que después se conecta como `ai_readonly`/`app_user`) antes de
+`docker compose up -d --build`. Sin ellas, `init_db.sql` crea los roles
+con contraseña vacía y el paso de abajo fallará igual (evidencia visible,
+no un fallo silencioso).
 
 ## Comando exacto que debe correr el CI (paso nuevo en `01-git-cicd`)
 
