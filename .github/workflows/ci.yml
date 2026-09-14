@@ -71,7 +71,7 @@ jobs:
           load: true
           tags: ${{ env.IMAGE_REPO }}:${{ github.sha }}
       - name: Escaneo de vulnerabilidades de imagen (antes de publicar)
-        uses: aquasecurity/trivy-action@v0.28.0   # versión fijada: nada de @master en un banco
+        uses: aquasecurity/trivy-action@v0.36.0   # versión fijada: nada de @master en un banco (v0.36 fija su propia dependencia setup-trivy por hash, no por tag)
         with:
           image-ref: ${{ env.IMAGE_REPO }}:${{ github.sha }}
           severity: CRITICAL,HIGH
