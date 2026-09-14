@@ -16,11 +16,35 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Postgres+pgvector en vivo: mismo esquema que docker-compose local (scripts/init_db.sql),
+    # para que las pruebas de integración de RAG (03-datos-rag) corran contra una BD real,
+    # no solo contra FakeEngine. Petición del lead: en el PC no hay Docker para `make up`.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: banco
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      # Mismas credenciales de rol que crea scripts/init_db.sql (app_user r/w, ai_readonly solo SELECT)
+      APP_DATABASE_URL: postgresql+asyncpg://app_user:app_pw@localhost:5432/banco
+      LLAMAINDEX_DATABASE_URL: postgresql+asyncpg://ai_readonly:ro_pw@localhost:5432/banco
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11", cache: pip }
       - run: pip install -r requirements-dev.txt
+      - name: Cargar esquema en Postgres (extensión vector + tablas + roles)
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d banco -v ON_ERROR_STOP=1 -f scripts/init_db.sql
       - name: Lint
         run: ruff check .
       - name: Security scan (SAST)
