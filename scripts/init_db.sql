@@ -34,12 +34,20 @@ CREATE INDEX IF NOT EXISTS documentos_bancarios_idx ON data_documentos_bancarios
 CREATE INDEX IF NOT EXISTS documentos_bancarios_idx_1 ON data_documentos_bancarios
   USING btree ((metadata_ ->> 'ref_doc_id'));
 
+-- Contraseñas: NUNCA literales en el fichero (0 secretos en código, regla del banco).
+-- Se leen del entorno del contenedor (docker-compose env_file: .env, o el Secret/Vault
+-- del banco en producción) con el truco estándar de psql: \set ejecuta el comando entre
+-- backticks y captura su salida; :'var' lo interpola como literal SQL correctamente
+-- escapado (a diferencia de un :var sin comillas, que sería inyección de SQL).
+\set app_password `echo "$APP_PW"`
+\set ai_ro_password `echo "$RO_PW"`
+
 -- Usuario de la API (lectura/escritura)
-CREATE ROLE app_user LOGIN PASSWORD 'app_pw';
+CREATE ROLE app_user LOGIN PASSWORD :'app_password';
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
 
 -- Usuario de la IA: SOLO LECTURA (principio de mínimo privilegio)
-CREATE ROLE ai_readonly LOGIN PASSWORD 'ro_pw';
+CREATE ROLE ai_readonly LOGIN PASSWORD :'ai_ro_password';
 GRANT SELECT ON accounts, products, data_documentos_bancarios TO ai_readonly;
 ALTER ROLE ai_readonly SET statement_timeout = '5s';

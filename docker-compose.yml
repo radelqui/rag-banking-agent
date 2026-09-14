@@ -1,10 +1,10 @@
 services:
   db:
     image: pgvector/pgvector:pg16
+    env_file: .env  # POSTGRES_PASSWORD, APP_PW, RO_PW: solo en .env (git-ignored), nunca aquí
     environment:
       POSTGRES_DB: banco
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
     ports: ["5432:5432"]
     volumes:
       - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/01_init.sql
@@ -19,8 +19,10 @@ services:
       db: { condition: service_healthy }
     env_file: .env
     environment:
-      APP_DATABASE_URL: postgresql+asyncpg://app_user:app_pw@db:5432/banco
-      LLAMAINDEX_DATABASE_URL: postgresql+asyncpg://ai_readonly:ro_pw@db:5432/banco
+      # ${APP_PW}/${RO_PW} los interpola docker compose desde .env (mismo fichero, no un default
+      # aquí): las credenciales viven una sola vez, en .env, no repetidas en el compose.
+      APP_DATABASE_URL: postgresql+asyncpg://app_user:${APP_PW}@db:5432/banco
+      LLAMAINDEX_DATABASE_URL: postgresql+asyncpg://ai_readonly:${RO_PW}@db:5432/banco
     ports: ["8000:8000"]
     read_only: true
     tmpfs: ["/tmp"]
