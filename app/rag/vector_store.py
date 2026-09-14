@@ -29,6 +29,8 @@ def build_vector_store(settings: Settings):  # pragma: no cover - requiere llama
         embed_dim=settings.embed_dim,
         hybrid_search=True,  # vector + full-text (BM25)
         text_search_config="spanish",
+        use_jsonb=True,  # init_db.sql define metadata_ como JSONB
+        perform_setup=False,  # el esquema lo crea el DBA (init_db.sql); ai_readonly no puede hacer DDL
         hnsw_kwargs={  # índice HNSW: estándar en producción
             "hnsw_m": 16,
             "hnsw_ef_construction": 64,
