@@ -4,6 +4,7 @@ Las variables las inyecta el pipeline CI/CD / Kubernetes Secret / Vault.
 El código conoce los NOMBRES; los VALORES los pone el banco al arrancar el contenedor.
 """
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,6 +14,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "rag-banking-agent"
+    # "rag": solo recuperación documental (sin tools). "agent": añade tools bancarias
+    # (PLAN-0001, get_account_balance/get_product_info) atadas al cliente autenticado.
+    # Literal en vez de str: un valor inválido falla fuerte al arrancar, no degrada mudo.
+    engine_mode: Literal["rag", "agent"] = "rag"
     # Conexión normal de la API (lectura/escritura)
     app_database_url: str = Field(default="postgresql+asyncpg://app:app@localhost:5432/banco")
     # Conexión RESTRINGIDA (solo SELECT) para LlamaIndex / tools del LLM
