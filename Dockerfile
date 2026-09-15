@@ -4,6 +4,9 @@ WORKDIR /build
 # apt-get upgrade: la imagen base python:3.11-slim no siempre trae los últimos parches de seguridad
 # de Debian (gzip/libpcre2/libsqlite3/perl-base...); Trivy los bloquea en el pipeline si no se actualizan.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+# pip/setuptools/wheel viejos del builder (70.3.0, CVE-2025-47273) se copian tal cual a /install si algún
+# paquete de requirements.txt los arrastra como dependencia — hay que actualizarlos ANTES de instalar.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
