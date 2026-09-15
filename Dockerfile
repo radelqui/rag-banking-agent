@@ -17,6 +17,11 @@ RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 # pip/setuptools/wheel del sistema (no de requirements.txt) traían CVE: jaraco.context 5.3.0 (CVE-2026-23949)
 # vendorizado dentro de setuptools, y wheel 0.45.1 (CVE-2026-24049). Es la imagen que Trivy escanea de verdad.
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+# pip vendoriza su propia copia de msgpack (pip/_vendor/msgpack==1.1.2, GHSA-6v7p-g79w-8964) — confirmado
+# contra src/pip/_vendor/vendor.txt de la versión instalada. No es de requirements.txt (03-datos-rag lo
+# verificó: 0 menciones en su árbol de dependencias) ni algo que la app use en runtime — el contenedor no
+# necesita pip una vez instaladas las dependencias en /install. Se desinstala del todo tras el upgrade.
+RUN python -m pip uninstall -y pip
 # Usuario sin privilegios
 RUN useradd --system --create-home --uid 10001 appuser
 WORKDIR /app
